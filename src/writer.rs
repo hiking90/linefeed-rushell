@@ -17,7 +17,7 @@ use crate::reader::{START_INVISIBLE, END_INVISIBLE};
 use crate::terminal::{CursorMode, Size, Terminal, TerminalWriter};
 use crate::util::{
     backward_char, forward_char, backward_search_char, forward_search_char,
-    filter_visible, is_combining_mark, is_wide, RangeArgument,
+    filter_visible, is_combining_mark, is_wide, RangeArgument, forward_word,
 };
 
 /// Duration to wait for input when "blinking"
@@ -44,6 +44,21 @@ const PROMPT_SEARCH_FAILED_PREFIX: usize = 7;
 const PROMPT_SEARCH_REVERSE_PREFIX: usize = 8;
 // Length of "': "
 const PROMPT_SEARCH_SUFFIX: usize = 3;
+
+#[derive(PartialEq)]
+/// Define the type of Suggestion
+pub enum Suggestion {
+    /// Nothing did
+    None,
+    /// There is no suggestion from history.
+    NotFound,
+    /// There is a matched suggestion in history
+    HistoryIndex(usize),
+    /// There is a matched suggestion from Completion
+    /// The first parameter is the suggestion string.
+    /// The second parameter is the full suggestion string. It is used for cache.
+    Completion(String, String),
+}
 
 /// Provides an interface to write line-by-line output to the terminal device.
 ///
@@ -119,6 +134,8 @@ pub(crate) struct Write {
 
     /// Terminal size as of last draw operation
     pub screen_size: Size,
+
+    pub suggestion: Suggestion,
 }
 
 pub(crate) struct WriteLock<'a, Term: 'a + Terminal> {
@@ -254,7 +271,9 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
 
         self.draw_buffer(0)?;
         let len = self.buffer.len();
-        self.move_from(len)
+        self.move_from(len)?;
+
+        self.draw_suggestion()
     }
 
     pub fn redraw_prompt(&mut self, new_prompt: PromptType) -> io::Result<()> {
@@ -727,7 +746,11 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
 
     pub fn forward_char(&mut self, n: usize) -> io::Result<()> {
         let pos = forward_char(n, &self.buffer, self.cursor);
-        self.move_to(pos)
+        if self.cursor == pos {
+            self.complete_suggestion()
+        } else {
+            self.move_to(pos)
+        }
     }
 
     pub fn backward_search_char(&mut self, n: usize, ch: char) -> io::Result<()> {
@@ -759,9 +782,7 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
         self.draw_buffer(start)?;
         self.term.clear_to_screen_end()?;
         let len = self.buffer.len();
-        self.move_from(len)?;
-
-        Ok(())
+        self.move_from(len)
     }
 
     pub fn insert_str(&mut self, s: &str) -> io::Result<()> {
@@ -827,6 +848,85 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
         self.cursor = final_cur;
         let len = self.buffer.len();
         self.move_from(len)
+    }
+
+    fn suggestion_string(&self) -> Option<String> {
+        match &self.suggestion {
+            Suggestion::HistoryIndex(index) => {
+                Some(self.history[*index][self.buffer.len()..].to_owned())
+            }
+            Suggestion::Completion(suggetion, _) => {
+                Some(suggetion.to_owned())
+            }
+            _ => { None }
+        }
+    }
+
+    fn complete_suggestion(&mut self) -> io::Result<()> {
+        self.suggestion_string().map(|suggestion|
+            self.insert_str(&suggestion)
+        );
+        Ok(())
+    }
+
+    pub fn forward_suggestion(&mut self, n: usize, word_break: &str) -> io::Result<()> {
+        if let Some(suggetion) = self.suggestion_string() {
+            let pos = forward_word(n, &suggetion, 0, word_break);
+            self.insert_str(&suggetion[0..pos])?;
+        }
+        Ok(())
+    }
+
+    pub fn suggestion_from_history(&mut self) -> Suggestion {
+        match self.suggestion {
+            Suggestion::Completion(_, _)=> { Suggestion::NotFound }
+            Suggestion::HistoryIndex(index) if self.history[index].starts_with(&self.buffer) => {
+                Suggestion::HistoryIndex(index)
+            }
+            _ => {
+                let index = self.history.iter().rposition(|x| x.starts_with(&self.buffer));
+                if let Some(index) = index {
+                    Suggestion::HistoryIndex(index)
+                } else {
+                    Suggestion::NotFound
+                }
+            }
+        }
+    }
+
+    pub fn draw_suggestion(&mut self) -> io::Result<()> {
+        if let Some(suggestion) = self.suggestion_string() {
+            let prev_cursor = self.cursor;
+            self.move_to_end()?;
+
+            self.draw_text_impl(self.cursor, &format!(
+                "\x01\x1b[38;5;240m{}\x1b[0m\x02",
+                suggestion
+                ), Display{
+                allow_tab: true,
+                allow_newline: false,
+                allow_escape: true,
+            }, true)?;
+
+
+            let suggestion = format!("{}{}", self.buffer, suggestion);
+            let prompt_len = self.prompt_suffix_length();
+            let (sline, scol) = self.line_col_with(suggestion.len(), &suggestion, prompt_len);
+            let (bline, bcol) = self.line_col_with(self.buffer.len(), &self.buffer, prompt_len);
+            self.term.move_up(sline - bline)?;
+            self.term.move_left(scol - bcol)?;
+
+            self.move_to(prev_cursor)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn clear_suggestion(&mut self) -> io::Result<()> {
+        let prev_cursor = self.cursor;
+        self.move_to_end()?;
+        self.term.clear_to_screen_end()?;
+        self.move_to(prev_cursor)
     }
 
     fn prompt_suffix_length(&self) -> usize {
@@ -1099,6 +1199,8 @@ impl Write {
             explicit_arg: false,
 
             screen_size,
+
+            suggestion: Suggestion::None,
         }
     }
 

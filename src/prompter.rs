@@ -25,7 +25,7 @@ use crate::util::{
 use crate::variables::VariableIter;
 use crate::writer::{
     BLINK_DURATION, display_str,
-    Digit, Display, HistoryIter, PromptType, Writer, WriteLock,
+    Digit, Display, HistoryIter, PromptType, Writer, WriteLock, Suggestion,
 };
 
 /// Provides access to the current state of input while a `read_line` call
@@ -80,6 +80,7 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
     fn reset_input(&mut self) {
         self.read.reset_data();
         self.write.reset_data();
+        let _ = self.reset_suggeestion();
     }
 
     pub(crate) fn start_read_line(&mut self) -> io::Result<()> {
@@ -630,7 +631,11 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
                 if n > 0 {
                     let pos = forward_word(n as usize,
                         &self.write.buffer, self.write.cursor, &self.read.word_break);
-                    self.write.move_to(pos)?;
+                    if pos == self.write.cursor {
+                        self.write.forward_suggestion(n as usize, &self.read.word_break)?;
+                    } else {
+                        self.write.move_to(pos)?;
+                    }
                 } else if n < 0 {
                     let pos = forward_word((-n) as usize,
                         &self.write.buffer, self.write.cursor, &self.read.word_break);
@@ -901,6 +906,7 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
     /// [`Function`]: ../function/trait.Function.html
     pub fn accept_input(&mut self) -> io::Result<()> {
         self.write.move_to_end()?;
+        self.reset_suggeestion()?;
         self.write.write_str("\n")?;
         self.read.input_accepted = true;
         self.write.is_prompt_drawn = false;
@@ -1007,6 +1013,7 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
                     self.replace_str_forward(start..end, &pfx)?;
                 }
 
+                self.show_completions(&completions)?;
                 self.read.completions = Some(completions);
             }
         }
@@ -1023,7 +1030,9 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
 
         let start = self.read.completion_start;
         let end = self.write.cursor;
-        self.replace_str_forward(start..end, &s)
+        self.replace_str_forward(start..end, &s)?;
+
+        self.reset_suggeestion()
     }
 
     fn insert_completions(&mut self, completions: &[Completion]) -> io::Result<()> {
@@ -1045,6 +1054,8 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
             return Ok(());
         }
 
+        self.write.clear_suggestion()?;
+
         let eff_width = self.write.screen_size.columns
             .min(self.read.completion_display_width);
 
@@ -1065,11 +1076,13 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
                 n_completions >= self.read.completion_query_items {
             // TODO: Replace borrowed data in `Table` with owned data.
             // Then, store table here to avoid regenerating column widths
-            self.start_page_completions(n_completions)
+            self.start_page_completions(n_completions)?;
         } else {
             self.show_list_completions(table)?;
-            self.write.draw_prompt()
+            self.write.draw_prompt()?;
         }
+
+        self.build_suggestion()
     }
 
     fn start_page_completions(&mut self, n_completions: usize) -> io::Result<()> {
@@ -1299,7 +1312,8 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
     ///
     /// If the given range is out of bounds or is not aligned to `char` boundaries.
     pub fn delete_range<R: RangeArgument<usize>>(&mut self, range: R) -> io::Result<()> {
-        self.write.delete_range(range)
+        self.write.delete_range(range)?;
+        self.reset_suggeestion()
     }
 
     /// Deletes a range from the buffer and adds the removed text to the
@@ -1475,7 +1489,8 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
     ///
     /// The cursor is placed at the end of the new string.
     pub fn insert_str(&mut self, s: &str) -> io::Result<()> {
-        self.write.insert_str(s)
+        self.write.insert_str(s)?;
+        self.build_suggestion()
     }
 
     /// Replaces a range in the buffer and redraws.
@@ -1513,7 +1528,64 @@ impl<'a, 'b: 'a, Term: 'b + Terminal> Prompter<'a, 'b, Term> {
         let cursor = self.write.cursor;
         self.write.buffer.insert_str(cursor, s);
 
-        self.write.draw_buffer(cursor)?;
-        self.write.clear_to_screen_end()
+        self.write.draw_buffer(cursor)
+    }
+
+    fn suggestion_from_completions(&mut self) -> Suggestion {
+        if self.write.cursor == self.write.buffer.len() {
+            let compl = self.read.completer.clone();
+            let end = self.write.cursor;
+            let start = compl.word_start(&self.write.buffer, end, self);
+
+            if start > end {
+                panic!("Completer::word_start returned invalid index; \
+                    start > end ({} > {})", start, end);
+            }
+
+            if let Suggestion::Completion(_, completion) = &self.write.suggestion {
+                if completion.starts_with(&self.write.buffer[start..end]) {
+                    return Suggestion::Completion(completion[(end - start)..].to_string(), completion.to_string());
+                }
+            }
+
+            let unquoted = compl.unquote(&self.write.buffer[start..end]).into_owned();
+            let completions = compl.complete(&unquoted, self, start, end);
+
+            if let Some(completions) = completions {
+                if completions.len() != 0 {
+                    let mut s = self.read.completer.quote(&completions[0].completion);
+
+                    completions[0].suffix.with_default(self.read.completion_append_character).map(|suffix|
+                        s.to_mut().push(suffix)
+                    );
+
+                    return Suggestion::Completion(s[(end - start)..].to_string(), s.to_string());
+                }
+            }
+        }
+        Suggestion::NotFound
+    }
+
+    fn build_suggestion(&mut self) -> io::Result<()> {
+        if self.write.buffer.len() == 0 {
+            self.reset_suggeestion()?;
+        } else {
+            let mut suggestion = self.write.suggestion_from_history();
+            if suggestion == Suggestion::NotFound {
+                suggestion = self.suggestion_from_completions();
+            }
+
+            if self.write.suggestion != Suggestion::None && self.write.suggestion != suggestion {
+                self.write.clear_suggestion()?;
+            }
+            self.write.suggestion = suggestion;
+        }
+
+        self.write.draw_suggestion()
+    }
+
+    fn reset_suggeestion(&mut self) -> io::Result<()> {
+        self.write.suggestion = Suggestion::None;
+        self.write.clear_suggestion()
     }
 }
