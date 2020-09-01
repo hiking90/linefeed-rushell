@@ -30,7 +30,7 @@ use crate::variables::{Variable, Variables, VariableIter};
 pub const STRING_CHARS: &str = "\"'";
 
 /// Default set of word break characters
-pub const WORD_BREAK_CHARS: &str = " \t\n\"\\'`@$><=;|&{(";
+pub const WORD_BREAK_CHARS: &str = " \t\n\"\\'`@$><=;|&{(/";
 
 /// Indicates the start of a series of invisible characters in the prompt
 pub const START_INVISIBLE: char = '\x01';
