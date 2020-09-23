@@ -474,6 +474,11 @@ impl<Term: Terminal> Interface<Term> {
         self.lock_reader().set_prompt(prompt)
     }
 
+    /// Get the prompt length
+    pub fn prompt_len(&self) -> usize {
+        self.lock_write().prompt_suffix_length()
+    }
+
     /// Sets the input buffer to the given string.
     ///
     /// # Notes

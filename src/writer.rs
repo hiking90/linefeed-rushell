@@ -929,7 +929,7 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
         self.move_to(prev_cursor)
     }
 
-    fn prompt_suffix_length(&self) -> usize {
+    pub fn prompt_suffix_length(&self) -> usize {
         match self.prompt_type {
             PromptType::Normal => self.prompt_suffix_len,
             PromptType::Number => {
