@@ -881,6 +881,13 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
         match self.suggestion {
             Suggestion::Completion(_, _)=> { Suggestion::NotFound }
             Suggestion::HistoryIndex(index) if self.history[index].starts_with(&self.buffer) => {
+                if self.history[index] == self.buffer {
+                    for i in (0..index).rev() {
+                        if self.history[i].starts_with(&self.buffer) {
+                            return Suggestion::HistoryIndex(i);
+                        }
+                    }
+                }
                 Suggestion::HistoryIndex(index)
             }
             _ => {
