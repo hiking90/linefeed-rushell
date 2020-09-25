@@ -891,21 +891,21 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
                 Suggestion::HistoryIndex(index)
             }
             _ => {
-                let index = self.history.iter().rposition(|x| x.starts_with(&self.buffer));
-                if let Some(index) = index {
-                    Suggestion::HistoryIndex(index)
-                } else {
-                    Suggestion::NotFound
-                }
+                self.history.iter()
+                    .rposition(|x| x.starts_with(&self.buffer))
+                    .map_or(Suggestion::NotFound, |idx| Suggestion::HistoryIndex(idx))
             }
         }
     }
 
     pub fn draw_suggestion(&mut self) -> io::Result<()> {
         if let Some(suggestion) = self.suggestion_string() {
-            self.move_to_end()?;
+            let orig_cursor = self.cursor;
 
-            self.draw_text_impl(self.cursor, &format!(
+            self.move_to_end()?;
+            let (_, col) = self.line_col(self.cursor);
+
+            self.draw_text_impl(col, &format!(
                 "\x01\x1b[38;5;240m\x02{}\x01\x1b[0m\x02",
                 suggestion
                 ), Display{
@@ -917,6 +917,8 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
             let suggestion = format!("{}{}", self.buffer, suggestion);
             let (line, col) = self.move_delta(suggestion.len(), self.buffer.len(), &suggestion);
             self.move_rel(line, col)?;
+
+            self.move_to(orig_cursor)?;
         }
 
         Ok(())
