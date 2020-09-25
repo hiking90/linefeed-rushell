@@ -903,11 +903,10 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
 
     pub fn draw_suggestion(&mut self) -> io::Result<()> {
         if let Some(suggestion) = self.suggestion_string() {
-            let prev_cursor = self.cursor;
             self.move_to_end()?;
 
             self.draw_text_impl(self.cursor, &format!(
-                "\x01\x1b[38;5;240m{}\x1b[0m\x02",
+                "\x01\x1b[38;5;240m\x02{}\x01\x1b[0m\x02",
                 suggestion
                 ), Display{
                 allow_tab: true,
@@ -915,15 +914,9 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
                 allow_escape: true,
             }, true)?;
 
-
             let suggestion = format!("{}{}", self.buffer, suggestion);
-            let prompt_len = self.prompt_suffix_length();
-            let (sline, scol) = self.line_col_with(suggestion.len(), &suggestion, prompt_len);
-            let (bline, bcol) = self.line_col_with(self.buffer.len(), &self.buffer, prompt_len);
-            self.term.move_up(sline - bline)?;
-            self.term.move_left(scol - bcol)?;
-
-            self.move_to(prev_cursor)?;
+            let (line, col) = self.move_delta(suggestion.len(), self.buffer.len(), &suggestion);
+            self.move_rel(line, col)?;
         }
 
         Ok(())
