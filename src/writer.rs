@@ -915,10 +915,10 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
             }, true)?;
 
             let suggestion = format!("{}{}", self.buffer, suggestion);
-            let (line, col) = self.move_delta(suggestion.len(), self.buffer.len(), &suggestion);
+            let (line, col) = self.move_delta(suggestion.len(), orig_cursor, &suggestion);
             self.move_rel(line, col)?;
 
-            self.move_to(orig_cursor)?;
+            self.cursor = orig_cursor;
         }
 
         Ok(())
