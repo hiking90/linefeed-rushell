@@ -1,5 +1,5 @@
 [package]
-name = "linefeed"
+name = "linefeed-rushell"
 description = "Interactive terminal input reader"
 
 authors = ["Murarth <murarth@gmail.com>"]
