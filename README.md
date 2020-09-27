@@ -1,3 +1,6 @@
+# `rushell_deps_linefeed`
+**`rushell_deps_linefeed` is a forked and modified package of [linefeed](https://github.com/murarth/linefeed) for [rushell](https://github.com/hiking90/rushell)**
+
 # `linefeed`
 
 `linefeed` is a configurable, concurrent, extensible, interactive input reader

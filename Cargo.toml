@@ -1,22 +1,22 @@
 [package]
-name = "linefeed-rushell"
-description = "Interactive terminal input reader"
+name = "rushell_deps_linefeed"
+description = "FORK of `linefeed` for rushell. Please use the official linefeed instead of this."
 
-authors = ["Murarth <murarth@gmail.com>"]
+authors = ["Murarth <murarth@gmail.com>", "Jeff Kim<hiking90@gmail.com"]
 version = "0.6.0"
 edition = "2018"
 
 documentation = "https://docs.rs/linefeed/"
 homepage = "https://github.com/murarth/linefeed"
-repository = "https://github.com/murarth/linefeed"
+repository = "https://github.com/hiking90/linefeed-rushell"
 
 categories = ["command-line-interface"]
-keywords = ["console", "terminal", "input", "readline"]
+keywords = ["rushell"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
 
 [dependencies]
-dirs = "3"
+dirs = "2"
 mortal = "0.2"
 
 [target.'cfg(windows)'.dependencies]
