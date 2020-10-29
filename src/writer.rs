@@ -9,9 +9,10 @@ use std::io;
 use std::iter::{repeat, Skip};
 use std::mem::swap;
 use std::ops::{Deref, DerefMut, Range};
-use std::sync::MutexGuard;
+use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::syntaxer::{Syntaxer, DummySyntaxer};
 use crate::chars::{is_ctrl, unctrl, ESCAPE, RUBOUT};
 use crate::reader::{START_INVISIBLE, END_INVISIBLE};
 use crate::terminal::{CursorMode, Size, Terminal, TerminalWriter};
@@ -136,6 +137,7 @@ pub(crate) struct Write {
     pub screen_size: Size,
 
     pub suggestion: Suggestion,
+    syntaxer: Arc<dyn Syntaxer>,
 }
 
 pub(crate) struct WriteLock<'a, Term: 'a + Terminal> {
@@ -196,6 +198,10 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
         }
 
         Ok(())
+    }
+
+    pub fn set_syntaxer(&mut self, syntaxer: Arc<dyn Syntaxer>) {
+        self.syntaxer = syntaxer;
     }
 
     pub fn set_prompt(&mut self, prompt: &str) -> io::Result<()> {
@@ -285,8 +291,8 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
     /// Draws a portion of the buffer, starting from the given cursor position
     pub fn draw_buffer(&mut self, pos: usize) -> io::Result<()> {
         let (_, col) = self.line_col(pos);
-
-        let buf = self.buffer[pos..].to_owned();
+        // let buf = self.buffer[pos..].to_owned();
+        let buf = self.syntaxer.highlight(&self.buffer, pos).unwrap_or(self.buffer[pos..].into());
         self.draw_text(col, &buf)?;
         Ok(())
     }
@@ -297,7 +303,7 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
             allow_tab: true,
             allow_newline: true,
             .. Display::default()
-        }, false)
+        }, true)
     }
 
     fn draw_raw_prompt(&mut self, text: &str) -> io::Result<()> {
@@ -1203,6 +1209,7 @@ impl Write {
             screen_size,
 
             suggestion: Suggestion::None,
+            syntaxer: Arc::new(DummySyntaxer),
         }
     }
 

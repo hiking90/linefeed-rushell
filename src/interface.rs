@@ -19,6 +19,7 @@ use crate::reader::{Read, Reader, ReadLock, ReadResult};
 use crate::terminal::{DefaultTerminal, Signal, Terminal};
 use crate::variables::Variable;
 use crate::writer::{Write, Writer, WriteLock};
+use crate::syntaxer::Syntaxer;
 
 /// The main interface to input reading and other terminal operations
 ///
@@ -452,6 +453,11 @@ impl<Term: Terminal> Interface<Term> {
 
     fn write_str(&self, line: &str) -> io::Result<()> {
         self.lock_writer_erase()?.write_str(line)
+    }
+
+    /// Set syntax highlighter. It is called just before buffer is displayed.
+    pub fn set_syntaxer(&self, syntaxer: Arc<dyn Syntaxer>) {
+        self.lock_write().set_syntaxer(syntaxer);
     }
 }
 

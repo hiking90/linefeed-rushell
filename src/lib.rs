@@ -54,6 +54,7 @@ pub mod terminal;
 mod util;
 pub mod variables;
 pub mod writer;
+pub mod syntaxer;
 
 #[cfg(unix)]
 #[path = "unix/mod.rs"]
