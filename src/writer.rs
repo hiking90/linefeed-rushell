@@ -290,9 +290,14 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
 
     /// Draws a portion of the buffer, starting from the given cursor position
     pub fn draw_buffer(&mut self, pos: usize) -> io::Result<()> {
-        let (_, col) = self.line_col(pos);
         // let buf = self.buffer[pos..].to_owned();
-        let buf = self.syntaxer.highlight(&self.buffer, pos).unwrap_or(self.buffer[pos..].into());
+        let (buf, new_pos) = self.syntaxer.highlight(&self.buffer, pos).unwrap_or((self.buffer[pos..].into(), pos));
+
+        let (line, col) = self.line_col(new_pos);
+        if new_pos != pos {
+            let (old_line, old_col) = self.line_col(pos);
+            self.move_rel(line as isize - old_line as isize, col as isize - old_col as isize)?;
+        }
         self.draw_text(col, &buf)?;
         Ok(())
     }
