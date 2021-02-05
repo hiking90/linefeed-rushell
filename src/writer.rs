@@ -863,7 +863,7 @@ impl<'a, Term: Terminal> WriteLock<'a, Term> {
 
     fn suggestion_string(&self) -> Option<String> {
         match &self.suggestion {
-            Suggestion::HistoryIndex(index) => {
+            Suggestion::HistoryIndex(index) if self.history[*index].starts_with(&self.buffer) => {
                 Some(self.history[*index][self.buffer.len()..].to_owned())
             }
             Suggestion::Completion(suggetion, _) => {
