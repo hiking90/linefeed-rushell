@@ -3,7 +3,7 @@ name = "rushell_deps_linefeed"
 description = "FORK of `linefeed` for rushell. Please use the official linefeed instead of this."
 
 authors = ["Murarth <murarth@gmail.com>", "Jeff Kim<hiking90@gmail.com"]
-version = "0.6.0"
+version = "0.6.0-jeff.1"
 edition = "2018"
 
 documentation = "https://docs.rs/linefeed/"
